@@ -45,7 +45,7 @@ A real-time judging and scoring system for the **RX Thanksgiving Retro Party** e
    
    Create `server/.env` file with:
    ```
-   MONGODB_URI=mongodb+srv://fanrx:rxjudge123@cluster102.pilzy.mongodb.net/?appName=Cluster102
+   MONGODB_URI= Your MongoDb connection string
    PORT=5000
    ```
 
