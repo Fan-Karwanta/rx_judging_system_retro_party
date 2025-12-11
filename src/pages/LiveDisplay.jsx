@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { eventsApi, scoresApi } from '../services/api';
 import socket from '../services/socket';
@@ -12,22 +12,59 @@ const LiveDisplay = () => {
   const [rankings, setRankings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isConnected, setIsConnected] = useState(socket.connected);
+  const selectedEventRef = useRef(selectedEvent);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedEventRef.current = selectedEvent;
+  }, [selectedEvent]);
 
   useEffect(() => {
     fetchEvents();
     
-    socket.on('score-updated', handleScoreUpdate);
-    socket.on('event-live-toggled', handleEventUpdate);
-    socket.on('rankings-toggled', handleEventUpdate);
-    socket.on('reveal-top-updated', handleEventUpdate);
-    socket.on('scores-cleared', handleScoresCleared);
+    // Connection status handlers
+    const onConnect = () => setIsConnected(true);
+    const onDisconnect = () => setIsConnected(false);
+    
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    
+    // Socket event handlers using refs to always have current values
+    const onScoreUpdated = ({ eventId: updatedEventId, rankings: newRankings }) => {
+      console.log('Score updated received:', updatedEventId, 'Current:', selectedEventRef.current);
+      if (updatedEventId === selectedEventRef.current) {
+        setRankings(newRankings);
+      }
+    };
+
+    const onEventUpdate = (event) => {
+      if (event._id === selectedEventRef.current) {
+        setCurrentEvent(event);
+      }
+      setEvents(prev => prev.map(e => e._id === event._id ? event : e));
+    };
+
+    const onScoresCleared = (clearedEventId) => {
+      if (clearedEventId === selectedEventRef.current) {
+        fetchRankings();
+      }
+    };
+
+    socket.on('score-updated', onScoreUpdated);
+    socket.on('event-live-toggled', onEventUpdate);
+    socket.on('rankings-toggled', onEventUpdate);
+    socket.on('reveal-top-updated', onEventUpdate);
+    socket.on('scores-cleared', onScoresCleared);
     
     return () => {
-      socket.off('score-updated', handleScoreUpdate);
-      socket.off('event-live-toggled', handleEventUpdate);
-      socket.off('rankings-toggled', handleEventUpdate);
-      socket.off('reveal-top-updated', handleEventUpdate);
-      socket.off('scores-cleared', handleScoresCleared);
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      socket.off('score-updated', onScoreUpdated);
+      socket.off('event-live-toggled', onEventUpdate);
+      socket.off('rankings-toggled', onEventUpdate);
+      socket.off('reveal-top-updated', onEventUpdate);
+      socket.off('scores-cleared', onScoresCleared);
     };
   }, []);
 
@@ -38,24 +75,6 @@ const LiveDisplay = () => {
     }
   }, [selectedEvent]);
 
-  const handleScoreUpdate = ({ eventId: updatedEventId, rankings: newRankings }) => {
-    if (updatedEventId === selectedEvent) {
-      setRankings(newRankings);
-    }
-  };
-
-  const handleEventUpdate = (event) => {
-    if (event._id === selectedEvent) {
-      setCurrentEvent(event);
-    }
-    setEvents(prev => prev.map(e => e._id === event._id ? event : e));
-  };
-
-  const handleScoresCleared = (clearedEventId) => {
-    if (clearedEventId === selectedEvent) {
-      fetchRankings();
-    }
-  };
 
   const fetchEvents = async () => {
     try {
@@ -145,6 +164,16 @@ const LiveDisplay = () => {
         </div>
         
         <div className="flex items-center gap-4">
+          {/* Connection Status */}
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${
+            isConnected 
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+              : 'bg-red-500/20 text-red-400 border border-red-500/30'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></span>
+            {isConnected ? 'LIVE SYNC' : 'OFFLINE'}
+          </div>
+          
           {/* Event Selector */}
           <select
             value={selectedEvent}
